@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"path/filepath"
 )
 
 type Device struct {
@@ -51,7 +52,7 @@ type ProductType struct {
 }
 type Location struct {
 	PositionType       string  `json:"positionType,omitempty"`
-	VerticalAccuracy   int     `json:"verticalAccuracy,omitempty"`
+	VerticalAccuracy   float64 `json:"verticalAccuracy,omitempty"`
 	Longitude          float64 `json:"longitude,omitempty"`
 	FloorLevel         int     `json:"floorLevel,omitempty"`
 	IsInaccurate       bool    `json:"isInaccurate,omitempty"`
@@ -93,7 +94,7 @@ type LostModeMetadata struct {
 }
 type CrowdSourcedLocation struct {
 	PositionType       string  `json:"positionType,omitempty"`
-	VerticalAccuracy   int     `json:"verticalAccuracy,omitempty"`
+	VerticalAccuracy   float64 `json:"verticalAccuracy,omitempty"`
 	Longitude          float64 `json:"longitude,omitempty"`
 	FloorLevel         int     `json:"floorLevel,omitempty"`
 	IsInaccurate       bool    `json:"isInaccurate,omitempty"`
@@ -111,7 +112,6 @@ type Role struct {
 }
 
 const timeLayout = "2006-01-02 15:04:05"
-
 func main() {
 	pflag.String("device", "", "Device name to track")
 	pflag.Parse()
@@ -134,12 +134,23 @@ func main() {
 	}
 	jsonFile := home + "/Library/Caches/com.apple.findmy.fmipcore/Items.data"
 
+	// Define the directory for saving CSV files
+	dataDir := filepath.Join(home, "AirTag_History_Data")
+	// Create the directory if it doesn't exist
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		log.Fatalf("Error creating data directory %s: %v", dataDir, err)
+	}
+
 	lastUpdate := make(map[string]time.Time)
 	writers := make(map[string]*csv.Writer)
+	fileHandles := make(map[string]*os.File) // To store file handles for proper closing
 
-	// startt caffeinate
+	// start caffeinate
 	cmd := exec.Command("caffeinate", "-di", "-w", strconv.Itoa(os.Getpid()))
 	err = cmd.Start()
+	if err != nil {
+		log.Fatalf("Error starting caffeinate: %v", err)
+	}
 
 	stop := make(chan os.Signal, 1)
 
@@ -166,7 +177,7 @@ func main() {
 
 				f, err := os.ReadFile(jsonFile)
 				if err != nil {
-					log.Fatal("Error opening file:", err)
+					log.Fatal("Error opening Find My data file:", err)
 				}
 
 				var devices []Device
@@ -193,38 +204,44 @@ func main() {
 					if !ok {
 						filename := strings.ReplaceAll(fmt.Sprintf("%s.csv", d.Name), " ", "_")
 						filename = strings.ReplaceAll(filename, "’", "")
-						var f *os.File
-						//create a file csv writer
-						new := false
-						if os.IsNotExist(err) {
-							f, err = os.Create(filename)
+						fullPath := filepath.Join(dataDir, filename) // Construct the full path
+
+						var file *os.File
+						newFile := false
+
+						// Check if the file exists
+						_, statErr := os.Stat(fullPath)
+						if os.IsNotExist(statErr) {
+							file, err = os.Create(fullPath)
 							if err != nil {
-								log.Fatal(err)
+								log.Fatalf("Error creating file %s: %v", fullPath, err)
 							}
-							new = true
+							newFile = true
+						} else if statErr != nil {
+							log.Fatalf("Error stating file %s: %v", fullPath, statErr)
 						} else {
-							f, err = os.OpenFile(filename, os.O_APPEND|os.O_RDWR, 0600)
+							file, err = os.OpenFile(fullPath, os.O_APPEND|os.O_RDWR, 0600)
 							if err != nil {
-								log.Fatal(err)
+								log.Fatalf("Error opening file %s: %v", fullPath, err)
 							}
 
-							//get last line
+							// Get last line to check last update timestamp
 							var line []byte
 							var cursor int64 = 0
-							stat, err := f.Stat()
+							stat, err := file.Stat()
 							if err != nil {
 								log.Fatal(err)
 							}
 							filesize := stat.Size()
 							for {
 								cursor -= 1
-								_, err := f.Seek(cursor, io.SeekEnd)
+								_, err := file.Seek(cursor, io.SeekEnd)
 								if err != nil {
 									log.Fatal(err)
 								}
 
 								char := make([]byte, 1)
-								_, err = f.Read(char)
+								_, err = file.Read(char)
 								if err != nil {
 									log.Fatal(err)
 								}
@@ -253,10 +270,10 @@ func main() {
 								}
 							}
 						}
-						defer f.Close()
-						w = csv.NewWriter(f)
+						fileHandles[d.Identifier] = file // Store the file handle
+						w = csv.NewWriter(file)
 						writers[d.Identifier] = w
-						if new {
+						if newFile {
 							w.Write([]string{"time", "latitude", "longitude", "horizontalAccuracy", "street", "number", "city", "country"})
 						}
 					}
@@ -284,6 +301,11 @@ func main() {
 	fmt.Println("Stopped by user")
 	//stop caffeinate
 	cmd.Process.Signal(syscall.SIGTERM)
+
+	// Close all open file handles
+	for _, file := range fileHandles {
+		file.Close()
+	}
 }
 
 func checkFindMyRunning() bool {
@@ -294,3 +316,4 @@ func checkFindMyRunning() bool {
 	}
 	return true
 }
+
