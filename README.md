@@ -1,3 +1,5 @@
+# https://github.com/AlmogBaku/airtag-history-tracker !! 🫡
+
 # Airtag history tracker
 
 This tiny app, tacks your Airtag locations and save them to a CSV file.
