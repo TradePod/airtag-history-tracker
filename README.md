@@ -26,7 +26,7 @@ Fortunately, it's very easy.
 1. Install Go using [Homebrew](https://brew.sh/): `brew install go`
 2. Compile and install this app using:
     ```console
-   go install github.com/AlmogBaku/airtag-history-tracker@latest
+   go install github.com/TradePod/airtag-history-tracker@latest
     ``` 
 3. That's it! You can run the app using `airtag-history-tracker` command.
 
