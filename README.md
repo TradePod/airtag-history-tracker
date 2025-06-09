@@ -3,7 +3,7 @@
 
 These small changes were mostly to accomodate my 2015 mbp stuck on OSX 12:
 - Datatype for VerticalAccuracy changed to float64
-- Changed method of creating CSV files (now located in Users/<<username>>/AirTag_History_Data) 
+- Changed method of creating CSV files (now located in Users/(username)/AirTag_History_Data) 
 - May no longer work past OSX 14 due to Items.data being encrypted but idk never tried 
 
 
